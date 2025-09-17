@@ -2,10 +2,13 @@
 
 namespace HusamTariq\FilamentDatabaseSchedule\Console\Scheduling;
 
-use HusamTariq\FilamentDatabaseSchedule\Http\Services\ScheduleService;
-use HusamTariq\FilamentDatabaseSchedule\Models\ScheduleHistory;
-use \Illuminate\Console\Scheduling\Schedule as BaseSchedule;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use \Illuminate\Console\Scheduling\Schedule as BaseSchedule;
+use HusamTariq\FilamentDatabaseSchedule\Models\ScheduleHistory;
+
+use HusamTariq\FilamentDatabaseSchedule\Http\Services\ScheduleService;
 
 class Schedule
 {
@@ -92,7 +95,7 @@ class Schedule
                 $event->onOneServer();
             }
 
-            $event->before(function () use ($task, $command){
+            $event->before(function () use ($task, $command) {
                 $this->history = $this->createHistoryEntry($task, $command);
             });
 
@@ -114,7 +117,11 @@ class Schedule
                 }
             );
 
-            $event->after(function () use ($event) {
+            $event->after(function () use ($event, $task) {
+                $text = $this->history ? $this->history->output : "";
+                if ($task->sendmail_search_words && $this->foundSearchWords($task, $text)) {
+                    $this->emailOutputForFoundSearchwords($task->email_output, $text, $event->command, $task->search_words);
+                }
                 unlink($event->output);
             });
 
@@ -122,6 +129,29 @@ class Schedule
         } else {
             throw new \Exception('Task with invalid instance type');
         }
+    }
+
+    private function emailOutputForFoundSearchwords(string $receipients, string $text, string $command, string $search_words): void
+    {
+        $text = "Search words: " . join(", ", explode("\n", $search_words)) . "\n\nOutput:\n" . $text;
+
+        dispatch(function () use ($text, $receipients, $command) {
+            $subject = ($command != "" ? $command . ": " : "") . "One or more of defined search words have been found";
+            foreach (explode(",", $receipients) as $receipient) {
+                Mail::raw($text, function ($message) use ($receipient, $subject) {
+                    $message->to($receipient);
+                    $message->subject($subject);
+                });
+            }
+        });
+    }
+
+    private function foundSearchWords($task, $text): bool
+    {
+        if (Str::contains($text, explode("\n", $task->search_words))) {
+            return true;
+        }
+        return false;
     }
 
     private function createLogFile($task, $event, $type = 'info')
@@ -135,14 +165,14 @@ class Schedule
         }
     }
 
-    private function createHistoryEntry($task, $command) : ScheduleHistory
+    private function createHistoryEntry($task, $command): ScheduleHistory
     {
         return $task->histories()->create(
             [
                 'command' => $command,
                 'params' => $task->getArguments(),
                 'options' => $task->getOptions(),
-                'output' => "Processing ..."
+                'output' => "Processing..."
             ]
         );
     }

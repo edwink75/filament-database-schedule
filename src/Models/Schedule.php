@@ -43,6 +43,8 @@ class Schedule extends Model
         'environments',
         'max_history_count',
         'limit_history_count',
+        'sendmail_search_words',
+        'search_words'
     ];
 
     protected $attributes = [
@@ -59,6 +61,7 @@ class Schedule extends Model
         'environments' => 'array',
         'max_history_count' => 'integer',
         'limit_history_count' => 'boolean',
+        'sendmail_search_words' => 'boolean',
         'status' => Status::class,
     ];
 
